@@ -483,6 +483,10 @@ static int libsrt_setup(URLContext *h, const char *uri, int flags)
     if (eid < 0)
         goto fail1;
 
+    int optlen = sizeof(s->latency);
+    ret = libsrt_getsockopt(h, fd, SRTO_RCVLATENCY, "SRTO_RCVLATENCY", &s->latency, &optlen);
+    if (ret == 0) s->latency *= 1000;
+
     h->is_streamed = 1;
     s->fd = fd;
     s->eid = eid;
