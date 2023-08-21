@@ -22,6 +22,7 @@
  */
 
 #include <srt/srt.h>
+#include <string.h>
 
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
@@ -502,6 +503,10 @@ static int libsrt_setup(URLContext *h, const char *uri, int flags)
     if (eid < 0)
         goto fail1;
 
+    int optlen = sizeof(s->latency);
+    ret = libsrt_getsockopt(h, fd, SRTO_RCVLATENCY, "SRTO_RCVLATENCY", &s->latency, &optlen);
+    if (ret == 0) s->latency *= 1000;
+
     h->is_streamed = 1;
     s->fd = fd;
     s->eid = eid;
@@ -721,6 +726,37 @@ static int libsrt_close(URLContext *h)
     srt_close(s->fd);
 
     srt_cleanup();
+
+    return 0;
+}
+
+int av_get_srt_statistics(AVFormatContext *context, int* latency, double* rtt, int* droppedPackets)
+{
+    if (context == NULL || context->pb == NULL 
+        || context->pb->opaque == NULL)
+        return 0;
+
+    if (strstr(context->url, "srt://") != context->url)
+        return 0;
+    
+    URLContext *u = context->pb->opaque;
+    SRTContext *s = u->priv_data;
+
+    if (s == NULL)
+        return 0;
+
+    SRT_TRACEBSTATS stats;
+    int ret = srt_bstats(s->fd, &stats, 0);
+    if (ret >= 0) {
+        if (latency)
+            *latency = stats.msRcvTsbPdDelay;
+        if (rtt)
+            *rtt = stats.msRTT;
+        if (droppedPackets)
+            *droppedPackets = stats.pktRcvDrop;
+
+        return 1;
+    }
 
     return 0;
 }
