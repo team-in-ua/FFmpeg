@@ -539,7 +539,7 @@ die(){
 
 If you think configure made a mistake, make sure you are using the latest
 version from Git.  If the latest version fails, report the problem to the
-ffmpeg-user@ffmpeg.org mailing list or IRC #ffmpeg on irc.freenode.net.
+ffmpeg-user@ffmpeg.org mailing list or IRC #ffmpeg on irc.libera.chat.
 EOF
     if disabled logging; then
         cat <<EOF
@@ -2767,6 +2767,7 @@ indeo3_decoder_select="hpeldsp"
 indeo4_decoder_select="ividsp"
 indeo5_decoder_select="ividsp"
 interplay_video_decoder_select="hpeldsp"
+ipu_decoder_select="mpegvideo"
 jpegls_decoder_select="mjpeg_decoder"
 jv_decoder_select="blockdsp"
 lagarith_decoder_select="llviddsp"
@@ -3280,7 +3281,7 @@ librav1e_encoder_deps="librav1e"
 librav1e_encoder_select="extract_extradata_bsf"
 librsvg_decoder_deps="librsvg"
 libshine_encoder_deps="libshine"
-libshine_encoder_select="audio_frame_queue"
+libshine_encoder_select="audio_frame_queue mpegaudioheader"
 libspeex_decoder_deps="libspeex"
 libspeex_encoder_deps="libspeex"
 libspeex_encoder_select="audio_frame_queue"
@@ -6571,7 +6572,7 @@ fi
 
 if enabled sdl2; then
     SDL2_CONFIG="${cross_prefix}sdl2-config"
-    test_pkg_config sdl2 "sdl2 >= 2.0.1 sdl2 < 2.1.0" SDL_events.h SDL_PollEvent
+    test_pkg_config sdl2 "sdl2 >= 2.0.1 sdl2 < 3.0.0" SDL_events.h SDL_PollEvent
     if disabled sdl2 && "${SDL2_CONFIG}" --version > /dev/null 2>&1; then
         sdl2_cflags=$("${SDL2_CONFIG}" --cflags)
         sdl2_extralibs=$("${SDL2_CONFIG}" --libs)
@@ -7518,7 +7519,6 @@ LD_LIB=$LD_LIB
 LD_PATH=$LD_PATH
 DLLTOOL=$dlltool
 WINDRES=$windres
-DEPWINDRES=$dep_cc
 DOXYGEN=$doxygen
 LDFLAGS=$LDFLAGS
 LDEXEFLAGS=$LDEXEFLAGS

@@ -931,6 +931,8 @@ int avfilter_init_dict(AVFilterContext *ctx, AVDictionary **options)
         ret = ctx->filter->init(ctx);
     else if (ctx->filter->init_dict)
         ret = ctx->filter->init_dict(ctx, options);
+    if (ret < 0)
+        return ret;
 
     if (ctx->enable_str) {
         ret = set_enable_expr(ctx, ctx->enable_str);
@@ -938,7 +940,7 @@ int avfilter_init_dict(AVFilterContext *ctx, AVDictionary **options)
             return ret;
     }
 
-    return ret;
+    return 0;
 }
 
 int avfilter_init_str(AVFilterContext *filter, const char *args)
