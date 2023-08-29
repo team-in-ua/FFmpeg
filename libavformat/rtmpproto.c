@@ -2793,7 +2793,7 @@ reconnect:
                     RTMP_CLIENT_VER3, RTMP_CLIENT_VER4);
         } else {
             snprintf(rt->flashver, FLASHVER_MAX_LENGTH,
-                    "FMLE/3.0 (compatible; %s)", LIBAVFORMAT_IDENT);
+                    "Switcher.ai");
         }
     }
 
