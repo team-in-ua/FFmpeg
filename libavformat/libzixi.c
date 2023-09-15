@@ -38,20 +38,15 @@
 #include "os_support.h"
 #include "url.h"
 
-/* This is for MPEG-TS and it's a default SRTO_PAYLOADSIZE for SRTT_LIVE (8 TS packets) */
-#ifndef SRT_LIVE_DEFAULT_PAYLOAD_SIZE
-#define SRT_LIVE_DEFAULT_PAYLOAD_SIZE 1316
-#endif
-
 /* This is the maximum payload size for Live mode, should you have a different payload type than MPEG-TS */
 #ifndef SRT_LIVE_MAX_PAYLOAD_SIZE
 #define SRT_LIVE_MAX_PAYLOAD_SIZE 1456
 #endif
 
-enum SRTMode {
-    SRT_MODE_CALLER = 0,
-    SRT_MODE_LISTENER = 1,
-    SRT_MODE_RENDEZVOUS = 2
+enum ZixiMode {
+    ZIXI_RECEIVER_CONNECT_MODE = 0,
+    ZIXI_RECEIVER_ACCEPT_MODE = 1,
+    ZIXI_FEEDER_MODE = 2
 };
 
 typedef struct ZixiContext {
@@ -62,6 +57,7 @@ typedef struct ZixiContext {
     char* receiverId;
     int64_t latency;
     char *password;
+    enum ZixiMode mode;
 
     int fd;
 } ZixiContext;
@@ -74,6 +70,10 @@ static const AVOption libzixi_options[] = {
     { "receiverId",  "Is a unique identifier of the unit", OFFSET(receiverId), AV_OPT_TYPE_STRING, { .str = NULL }, .flags = D|E },
     { "latency",     "receiver delay (in microseconds) to absorb bursts of missed packet retransmissions", OFFSET(latency), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, .flags = D|E },
     { "password",    "this is the password for the stream", OFFSET(password),  AV_OPT_TYPE_STRING, { .str = NULL }, .flags = D|E },
+    { "mode",        "Connection mode (receiver connect, receiver accept, feeder)", OFFSET(mode), AV_OPT_TYPE_INT, { .i64 = ZIXI_RECEIVER_CONNECT_MODE }, ZIXI_RECEIVER_CONNECT_MODE, ZIXI_FEEDER_MODE, .flags = D|E, "mode" },
+    { "connect",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_RECEIVER_CONNECT_MODE },     INT_MIN, INT_MAX, .flags = D|E, "mode" },
+    { "accept",      NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_RECEIVER_ACCEPT_MODE },   INT_MIN, INT_MAX, .flags = D|E, "mode" },
+    { "feeder",      NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_FEEDER_MODE }, INT_MIN, INT_MAX, .flags = D|E, "mode" },
     { NULL }
 };
 
@@ -122,10 +122,31 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
 {
     int ret = 0;
     ZixiContext *context = h->priv_data;
-
-    const char * p;
     char buf[256];
-    p = strchr(uri, '?');
+    char hostname[1024],proto[20];
+    int port = -1;
+
+    context->mode = ZIXI_RECEIVER_CONNECT_MODE;
+
+    av_url_split(proto, sizeof(proto), NULL, 0, hostname, sizeof(hostname),
+                  &port, NULL, 0, uri);
+    if (strcmp(proto, "zixi"))
+    {
+        return AVERROR(EINVAL);
+    }
+
+    if (strcmp(hostname, "0.0.0.0") == 0)
+    {
+        if (port <= 0 || port >= 65536) {
+            av_log(h, AV_LOG_ERROR, "Port missing in uri\n");
+            return AVERROR(EINVAL);
+        }
+
+        context->mode = ZIXI_RECEIVER_ACCEPT_MODE;
+        av_log(h, AV_LOG_ERROR, "ACCEPT %d\n", port);
+    }
+
+    const char * p = strchr(uri, '?');
     if (p)
     {
         if (av_find_info_tag(buf, sizeof(buf), "receiverId", p)) {
@@ -142,6 +163,7 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
     }
 
     zixi_client_configure_logging(ZIXI_LOG_WARNINGS, libzixi_logger, (void*)h);
+
     context->callbacks.zixi_new_stream = libzixi_stream_info_handler;
     context->callbacks.zixi_status_changed = libzixi_status_changed_handler;
     context->callbacks.zixi_bitrate_changed = NULL;
@@ -183,25 +205,34 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
 
     zixi_configure_error_correction(context->zixi_handle, context->latency / 1000, ZIXI_LATENCY_STATIC, fec ? ZIXI_FEC_ON : ZIXI_FEC_OFF, fec_overhead, fec_block_ms, fec_content_aware, false, 0, false, ZIXI_ARQ_ON);
 
-    ret = zixi_connect_url(context->zixi_handle, uri, true, context->callbacks, true, false, true, "");
-
-    if (ret != ZIXI_ERROR_OK)
+    if (context->mode == ZIXI_RECEIVER_CONNECT_MODE)
     {
-        int ex_ret = zixi_get_last_error(context->zixi_handle);
-        av_log(h, AV_LOG_ERROR, "zixi_connect_url ERROR - %d, last error - %d\n", ret, ex_ret);
-        zixi_delete_connection_handle(context->zixi_handle);
-        zixi_destroy();
-        return AVERROR_UNKNOWN;
+        ret = zixi_connect_url(context->zixi_handle, uri, true, context->callbacks, true, false, true, "");
+
+        if (ret != ZIXI_ERROR_OK)
+        {
+            int ex_ret = zixi_get_last_error(context->zixi_handle);
+            av_log(h, AV_LOG_ERROR, "zixi_connect_url ERROR - %d, last error - %d\n", ret, ex_ret);
+            zixi_delete_connection_handle(context->zixi_handle);
+            zixi_destroy();
+            return AVERROR_UNKNOWN;
+        }
+
+        ret = zixi_query_stream_info(context->zixi_handle, &context->info);
+        if (ret != ZIXI_ERROR_OK)
+        {
+            av_log(h, AV_LOG_ERROR, "zixi_query_stream_info ERROR - %d\n", ret);
+            zixi_disconnect(context->zixi_handle);
+            zixi_delete_connection_handle(context->zixi_handle);
+            zixi_destroy();
+            return AVERROR_UNKNOWN;
+        }
     }
-
-    ret = zixi_query_stream_info(context->zixi_handle, &context->info);
-    if (ret != ZIXI_ERROR_OK)
+    else if (context->mode == ZIXI_RECEIVER_ACCEPT_MODE)
     {
-        av_log(h, AV_LOG_ERROR, "zixi_query_stream_info ERROR - %d\n", ret);
         zixi_disconnect(context->zixi_handle);
-        zixi_delete_connection_handle(context->zixi_handle);
-        zixi_destroy();
-        return AVERROR_UNKNOWN;
+        ret = zixi_accept(context->zixi_handle, port, context->callbacks, true, ZIXI_PROTOCOL_UDP);
+        av_log(h, AV_LOG_ERROR, "zixi_accept ERROR - %d\n", ret);
     }
 
     return 0;
