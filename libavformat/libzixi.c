@@ -513,11 +513,6 @@ static int libzixi_get_file_handle(URLContext *h)
     return context->fd;
 }
 
-int av_get_srt_statistics(AVFormatContext *context, int* latency, double* rtt, int* droppedPackets)
-{
-    return 0;
-}
-
 static const AVClass libzixi_class = {
     .class_name = "libzixi",
     .item_name  = av_default_item_name,
