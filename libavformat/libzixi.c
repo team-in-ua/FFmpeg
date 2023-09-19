@@ -402,10 +402,13 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
 
         zixi_configure_error_correction(context->streamHandle, context->latency / 1000, ZIXI_LATENCY_STATIC, fec ? ZIXI_FEC_ON : ZIXI_FEC_OFF, fec_overhead, fec_block_ms, fec_content_aware, false, 0, false, ZIXI_ARQ_ON);
 
-        ret = zixi_configure_decryption(context->streamHandle, libzixi_get_encryption(context->encryption), context->encryptionKey);
-        if (ret != 0)
+        if (context->encryptionKey)
         {
-            av_log(h, AV_LOG_ERROR, "zixi_configure_decryption ERROR - %d\n", ret);
+            ret = zixi_configure_decryption(context->streamHandle, libzixi_get_encryption(context->encryption), context->encryptionKey);
+            if (ret != 0)
+            {
+                av_log(h, AV_LOG_ERROR, "zixi_configure_decryption ERROR - %d\n", ret);
+            }
         }
 
         if (context->mode == ZIXI_RECEIVER_CONNECT_MODE)
