@@ -39,11 +39,21 @@
 #include "os_support.h"
 #include "url.h"
 
-enum ZixiMode {
+enum ZixiModeType {
     ZIXI_RECEIVER_CONNECT_MODE = 0,
     ZIXI_RECEIVER_ACCEPT_MODE = 1,
     ZIXI_FEEDER_MODE = 2
 };
+
+enum ZixiEncryptionType
+{
+    ZIXI_NONE_ENCRYPTION = 0,
+    ZIXI_AES_128_ENCRYPTION,
+    ZIXI_AES_192_ENCRYPTION,
+    ZIXI_AES_256_ENCRYPTION,
+    ZIXI_CHACHA20_ENCRYPTION, // fast cipher for platforms without AES-NI
+};
+
 
 #define ZIXI_FRAME_SIZE 1316
 
@@ -57,7 +67,9 @@ typedef struct ZixiContext {
     char* receiverId;
     int64_t latency;
     char *password;
-    enum ZixiMode mode;
+    enum ZixiModeType mode;
+    enum ZixiEncryptionType encryption;
+    char *encryptionKey;
 
     char* streamId;
     zixi_stream_config streamConfig;
@@ -77,10 +89,17 @@ static const AVOption libzixi_options[] = {
     { "latency",    "receiver delay (in microseconds) to absorb bursts of missed packet retransmissions", OFFSET(latency), AV_OPT_TYPE_INT64, { .i64 = -1 }, -1, INT64_MAX, .flags = D|E },
     { "password",   "this is the password for the stream", OFFSET(password),  AV_OPT_TYPE_STRING, { .str = NULL }, .flags = D|E },
     { "mode",       "Connection mode (receiver connect, receiver accept, feeder)", OFFSET(mode), AV_OPT_TYPE_INT, { .i64 = ZIXI_RECEIVER_CONNECT_MODE }, ZIXI_RECEIVER_CONNECT_MODE, ZIXI_FEEDER_MODE, .flags = D|E, "mode" },
-    { "connect",    NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_RECEIVER_CONNECT_MODE },     INT_MIN, INT_MAX, .flags = D|E, "mode" },
-    { "accept",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_RECEIVER_ACCEPT_MODE },   INT_MIN, INT_MAX, .flags = D|E, "mode" },
+    { "connect",    NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_RECEIVER_CONNECT_MODE }, INT_MIN, INT_MAX, .flags = D|E, "mode" },
+    { "accept",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_RECEIVER_ACCEPT_MODE },  INT_MIN, INT_MAX, .flags = D|E, "mode" },
     { "feeder",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_FEEDER_MODE }, INT_MIN, INT_MAX, .flags = D|E, "mode" },
     { "streamId",   "Stream name on the broadcaster (feeder mode only)", OFFSET(streamId), AV_OPT_TYPE_STRING, { .str = NULL }, .flags = D|E },
+    { "enc",        "Encryption type. Options are AES128/192/256 or CHACHA20", OFFSET(encryption), AV_OPT_TYPE_INT, { .i64 = ZIXI_NONE_ENCRYPTION }, ZIXI_NONE_ENCRYPTION, ZIXI_CHACHA20_ENCRYPTION, .flags = D|E, "enc" },
+    { "none",       NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_NONE_ENCRYPTION },     INT_MIN, INT_MAX, .flags = D|E, "enc" },
+    { "aes128",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_AES_128_ENCRYPTION },  INT_MIN, INT_MAX, .flags = D|E, "enc" },
+    { "aes192",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_AES_192_ENCRYPTION },  INT_MIN, INT_MAX, .flags = D|E, "enc" },
+    { "aes256",     NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_AES_256_ENCRYPTION },  INT_MIN, INT_MAX, .flags = D|E, "enc" },
+    { "chacha20",   NULL, 0, AV_OPT_TYPE_CONST,  { .i64 = ZIXI_CHACHA20_ENCRYPTION }, INT_MIN, INT_MAX, .flags = D|E, "enc" },
+    { "key",        "Encryption key - string of hex digits", OFFSET(encryptionKey),  AV_OPT_TYPE_STRING, { .str = NULL }, .flags = D|E },
     { NULL }
 };
 
@@ -130,6 +149,31 @@ static void encoder_feedback(int bps, bool iframe, void* data)
     av_log(data, AV_LOG_INFO, "encoder_feedback: set %d\n", bps);
 }
 
+static ZIXI_ENCRYPTION libzixi_get_encryption(enum ZixiEncryptionType encryption)
+{
+    ZIXI_ENCRYPTION result;
+    result = ZIXI_NO_ENCRYPTION;
+
+    if (encryption == ZIXI_AES_128_ENCRYPTION)
+    {
+        result = ZIXI_AES_128;
+    }
+    else if (encryption == ZIXI_AES_192_ENCRYPTION)
+    {
+        result = ZIXI_AES_192;
+    }
+    else if (encryption == ZIXI_AES_256_ENCRYPTION)
+    {
+        result = ZIXI_AES_256;
+    }
+    else if (encryption == ZIXI_CHACHA20_ENCRYPTION)
+    {
+        result = ZIXI_CHACHA20;
+    }
+
+    return result;
+}
+
 static int libzixi_open(URLContext *h, const char *uri, int flags)
 {
     int ret = 0;
@@ -137,8 +181,12 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
     char buf[256];
     char hostname[1024], proto[20], path[1024];
     int port = -1;
-    context->frameSize = 0;
+    const char* user;
+    const char* session;
+    const char* p;
+    char* streamIdPointer;
 
+    context->frameSize = 0;
     context->mode = ZIXI_RECEIVER_CONNECT_MODE;
 
     av_url_split(proto, sizeof(proto), NULL, 0, hostname, sizeof(hostname),
@@ -158,7 +206,7 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
         context->mode = ZIXI_RECEIVER_ACCEPT_MODE;
     }
 
-    const char * p = strchr(uri, '?');
+    p = strchr(uri, '?');
     if (p)
     {
         if (av_find_info_tag(buf, sizeof(buf), "receiverId", p)) {
@@ -187,6 +235,25 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
             av_freep(&context->streamId);
             context->streamId = av_strndup(buf, strlen(buf));
         }
+        if (av_find_info_tag(buf, sizeof(buf), "enc", p)) {
+            if (!strcmp(buf, "none")) {
+                context->encryption = ZIXI_NONE_ENCRYPTION;
+            } else if (!strcmp(buf, "aes128")) {
+                context->encryption = ZIXI_AES_128_ENCRYPTION;
+            } else if (!strcmp(buf, "aes192")) {
+                context->encryption = ZIXI_AES_192_ENCRYPTION;
+            } else if (!strcmp(buf, "aes256")) {
+                context->encryption = ZIXI_AES_256_ENCRYPTION;
+            } else if (!strcmp(buf, "chacha20")) {
+                context->encryption = ZIXI_CHACHA20_ENCRYPTION;
+            } else {
+                return AVERROR(EINVAL);
+            }
+        }
+        if (av_find_info_tag(buf, sizeof(buf), "key", p)) {
+            av_freep(&context->encryptionKey);
+            context->encryptionKey = av_strndup(buf, strlen(buf));
+        }
     }
 
     zixi_client_configure_logging(ZIXI_LOG_WARNINGS, libzixi_logger, (void*)h);
@@ -202,7 +269,7 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
                 streamIdLength -= strlen(p);
             }
 
-            char* streamIdPointer = path;
+            streamIdPointer = path;
             if (path[0] == '/')
             {
                 ++streamIdPointer;
@@ -218,8 +285,8 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
             }
         }
 
-        const char* user = context->receiverId == NULL ? "" : context->receiverId;
-        const char* session = context->password == NULL ? "" : context->password;
+        user = context->receiverId == NULL ? "" : context->receiverId;
+        session = context->password == NULL ? "" : context->password;
         ret = zixi_configure_credentials(user, strlen(user), session, strlen(session));
         if(ret != ZIXI_ERROR_OK)
         {
@@ -234,9 +301,8 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
             return AVERROR_UNKNOWN;
         }
 
-        av_log(h, AV_LOG_ERROR, "Stream ID: %s %d\n", context->streamId, strlen(context->streamId) );
-        context->streamConfig.enc_type = ZIXI_NO_ENCRYPTION;
-        context->streamConfig.sz_enc_key = NULL;
+        context->streamConfig.sz_enc_key = context->encryptionKey;
+        context->streamConfig.enc_type = libzixi_get_encryption(context->encryption);
         context->streamConfig.fast_connect = 0;
         context->streamConfig.max_bitrate = 50000 * 1000;
         context->streamConfig.max_latency_ms = 10000;
@@ -318,7 +384,6 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
             return AVERROR_UNKNOWN;
         }
 
-        //"ip-172-31-29-229"
         ret = zixi_configure_id(context->streamHandle,
                                  context->receiverId == NULL ? "" : context->receiverId,
                                  context->password == NULL ? "" : context->password);
@@ -330,12 +395,18 @@ static int libzixi_open(URLContext *h, const char *uri, int flags)
             return AVERROR_UNKNOWN;
         }
 
-        bool fec               = false;
-        unsigned int fec_overhead      = 30;
-        unsigned int fec_block_ms      = 50;
+        bool fec = false;
+        unsigned int fec_overhead = 30;
+        unsigned int fec_block_ms = 50;
         bool fec_content_aware = false;
 
         zixi_configure_error_correction(context->streamHandle, context->latency / 1000, ZIXI_LATENCY_STATIC, fec ? ZIXI_FEC_ON : ZIXI_FEC_OFF, fec_overhead, fec_block_ms, fec_content_aware, false, 0, false, ZIXI_ARQ_ON);
+
+        ret = zixi_configure_decryption(context->streamHandle, libzixi_get_encryption(context->encryption), context->encryptionKey);
+        if (ret != 0)
+        {
+            av_log(h, AV_LOG_ERROR, "zixi_configure_decryption ERROR - %d\n", ret);
+        }
 
         if (context->mode == ZIXI_RECEIVER_CONNECT_MODE)
         {
@@ -392,7 +463,7 @@ static int libzixi_read(URLContext *h, uint8_t *buf, int size)
     return bytes_read;
 }
 
-static unsigned long getTickCount()
+static unsigned long getTickCount(void)
 {
 #ifndef WIN32
     struct timeval tv;
@@ -409,6 +480,7 @@ static int libzixi_write(URLContext *h, const uint8_t *buf, int size)
     int ret = 0;
     int offset = 0;
     int resultSize = size;
+    unsigned long now;
 
     if (context->frameSize > 0)
     {
@@ -421,7 +493,7 @@ static int libzixi_write(URLContext *h, const uint8_t *buf, int size)
         if (context->frameSize == ZixiFrameSize)
         {
             context->frameSize = 0;
-            unsigned long now = getTickCount();
+            now = getTickCount();
             ret = zixi_send_frame(context->streamHandle, context->frame, ZixiFrameSize,
                                    (context->streamConfig.rtp || context->streamConfig.smoothing_latency) ? 0 : now * 90);
             if (ret == ZIXI_ERROR_OK)
@@ -449,7 +521,7 @@ static int libzixi_write(URLContext *h, const uint8_t *buf, int size)
             break;
         }
 
-        unsigned long now = getTickCount();
+        now = getTickCount();
         ret = zixi_send_frame(context->streamHandle, buf + offset, ZixiFrameSize, (context->streamConfig.rtp || context->streamConfig.smoothing_latency) ? 0 : now * 90);
         if (ret == ZIXI_ERROR_OK)
         {
@@ -502,6 +574,7 @@ static int libzixi_close(URLContext *h)
         av_freep(&context->receiverId);
     }
 
+    av_freep(&context->encryptionKey);
     av_freep(&context->password);
 
     return 0;
