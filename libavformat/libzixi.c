@@ -594,8 +594,10 @@ int av_get_zixi_statistics(AVFormatContext *context, int* latency, double* rtt, 
 {
     int ret;
     ZIXI_NETWORK_STATS net_stats;
-    //ZIXI_CONNECTION_STATS con_stats;
-    //ZIXI_ERROR_CORRECTION_STATS error_correction_stats;
+    ZIXI_CONNECTION_STATS con_stats;
+    ZIXI_ERROR_CORRECTION_STATS error_correction_stats;
+    URLContext *u;
+    ZixiContext *s;
 
     if (context == NULL || context->pb == NULL
         || context->pb->opaque == NULL)
@@ -604,13 +606,13 @@ int av_get_zixi_statistics(AVFormatContext *context, int* latency, double* rtt, 
     if (strstr(context->url, "zixi://") != context->url)
         return 0;
 
-    URLContext *u = context->pb->opaque;
-    ZixiContext *s = u->priv_data;
+    u = context->pb->opaque;
+    s = u->priv_data;
 
     if (s == NULL)
         return 0;
 
-    ret = zixi_query_statistics(s->streamHandle, NULL, &net_stats, NULL);
+    ret = zixi_query_statistics(s->streamHandle, &con_stats, &net_stats, &error_correction_stats);
     if (ret != ZIXI_ERROR_OK)
     {
         av_log(u, AV_LOG_ERROR, "zixi_query_statistics ERROR - %d\n", ret);
