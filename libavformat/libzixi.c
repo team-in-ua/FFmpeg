@@ -459,7 +459,7 @@ static int libzixi_read(URLContext *h, uint8_t *buf, int size)
         if (ret != ZIXI_ERROR_NOT_READY && ret != ZIXI_ERROR_OK)
         {
             av_log(h, AV_LOG_ERROR, "zixi_read ERROR - %d\n", ret);
-            break;
+            return AVERROR(EIO);
         }
     } while (ret != ZIXI_ERROR_OK);
 
@@ -506,6 +506,7 @@ static int libzixi_write(URLContext *h, const uint8_t *buf, int size)
             else
             {
                 av_log(h, AV_LOG_ERROR, "zixi_write ERROR - %d %d\n", ret, size);
+                return AVERROR(EIO);
             }
         }
     }
@@ -533,7 +534,7 @@ static int libzixi_write(URLContext *h, const uint8_t *buf, int size)
         else
         {
             av_log(h, AV_LOG_ERROR, "zixi_write ERROR - %d %d\n", ret, size);
-            break;
+            return AVERROR(EIO);
         }
 
         offset += ZixiFrameSize;
@@ -587,6 +588,43 @@ static int libzixi_get_file_handle(URLContext *h)
 {
     ZixiContext *context = h->priv_data;
     return context->fd;
+}
+
+int av_get_zixi_statistics(AVFormatContext *context, int* latency, double* rtt, int* droppedPackets)
+{
+    int ret;
+    ZIXI_NETWORK_STATS net_stats;
+    //ZIXI_CONNECTION_STATS con_stats;
+    //ZIXI_ERROR_CORRECTION_STATS error_correction_stats;
+
+    if (context == NULL || context->pb == NULL
+        || context->pb->opaque == NULL)
+        return 0;
+
+    if (strstr(context->url, "zixi://") != context->url)
+        return 0;
+
+    URLContext *u = context->pb->opaque;
+    ZixiContext *s = u->priv_data;
+
+    if (s == NULL)
+        return 0;
+
+    ret = zixi_query_statistics(s->streamHandle, NULL, &net_stats, NULL);
+    if (ret != ZIXI_ERROR_OK)
+    {
+        av_log(u, AV_LOG_ERROR, "zixi_query_statistics ERROR - %d\n", ret);
+        return 0;
+    }
+
+    if (latency)
+        *latency = net_stats.latency;
+    if (rtt)
+        *rtt = net_stats.rtt;
+    if (droppedPackets)
+        *droppedPackets = net_stats.dropped;
+
+    return 1;
 }
 
 static const AVClass libzixi_class = {
