@@ -3007,6 +3007,8 @@ AVRational av_stream_get_codec_timebase(const AVStream *st);
 
 int av_get_srt_statistics(AVFormatContext *context, int* latency, double* rtt, int* droppedPackets);
 
+int av_get_zixi_statistics(AVFormatContext *context, int* latency, double* rtt, int* droppedPackets);
+
 /**
  * @}
  */
