@@ -110,6 +110,7 @@ static void libzixi_logger(void* user_data, int level, const char* str)
 
 static void libzixi_status_changed_handler(void *handle, ZIXI_STATUS status, void *user_data)
 {
+    /*
     int err = zixi_get_last_error(handle);
 
     switch (status)
@@ -138,6 +139,7 @@ static void libzixi_status_changed_handler(void *handle, ZIXI_STATUS status, voi
     {
         av_log(user_data, AV_LOG_ERROR, "Error=%d\n", err);
     }
+    */
 }
 
 static void libzixi_stream_info_handler(void *handle, ZIXI_STREAM_INFO info, void *user_data)
@@ -574,7 +576,6 @@ static int libzixi_close(URLContext *h)
         }
 
         zixi_destroy();
-
         av_freep(&context->receiverId);
     }
 
@@ -603,13 +604,13 @@ int av_get_zixi_statistics(AVFormatContext *context, int* latency, double* rtt, 
         || context->pb->opaque == NULL)
         return 0;
 
-    if (strstr(context->url, "zixi://") != context->url)
+    if (!context->url || strstr(context->url, "zixi://") != context->url)
         return 0;
 
     u = context->pb->opaque;
     s = u->priv_data;
 
-    if (s == NULL)
+    if (s == NULL || s->streamHandle == NULL)
         return 0;
 
     ret = zixi_query_statistics(s->streamHandle, &con_stats, &net_stats, &error_correction_stats);
