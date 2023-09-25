@@ -34,12 +34,6 @@
 #undef main /* We don't want SDL to override our main() */
 #endif
 
-
-#if CONFIG_LIBXMA2API
-#define MAX_XLNX_DEVS 128
-#define XLNX_XCLBIN_PATH "/opt/xilinx/xcdr/xclbins/transcode.xclbin"
-#define MAX_XLNX_DEVICES_PER_CMD 2
-#endif
 /**
  * program name, defined by the program for show_version().
  */

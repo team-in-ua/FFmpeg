@@ -49,6 +49,12 @@
 #include "libavutil/opt.h"
 #include "libavutil/dict.h"
 #include "libavformat/avformat.h"
+#include "xma.h"
+#if CONFIG_LIBXMA2API
+#define MAX_XLNX_DEVS 128
+#define XLNX_XCLBIN_PATH "/opt/xilinx/xcdr/xclbins/transcode.xclbin"
+#define MAX_XLNX_DEVICES_PER_CMD 2
+#endif
 
 /**
  * Return the LIBAVDEVICE_VERSION_INT constant.
@@ -512,6 +518,9 @@ int avdevice_list_input_sources(struct AVInputFormat *device, const char *device
 int avdevice_list_output_sinks(struct AVOutputFormat *device, const char *device_name,
                                AVDictionary *device_options, AVDeviceInfoList **device_list);
 
+#if CONFIG_LIBXMA2API
+int avdevice_xlnx_hwdev_init(XmaXclbinParameter* xclbin_nparam, int xlnx_num_devs, int dev_id);
+#endif
 /**
  * @}
  */

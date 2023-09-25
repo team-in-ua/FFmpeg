@@ -100,28 +100,7 @@ int opt_xlnx_hwdev(void *optctx, const char *opt, const char *arg)
    return 0;
 }
 
-static void xlnx_hwdev_init(int xlnx_num_devs, XmaXclbinParameter *xclbin_nparam )
-{
-    int i = 0;
-    for(i=0; i< xlnx_num_devs;i++)
-    {
-        av_log (NULL, AV_LOG_INFO, "------------------i=%d------------------------------------------\n\n",i);
-        av_log (NULL, AV_LOG_INFO, "   xclbin_name :  %s\n", xclbin_nparam[i].xclbin_name);
-        av_log (NULL, AV_LOG_INFO, "   device_id   :  %d \n", xclbin_nparam[i].device_id);
-        av_log (NULL, AV_LOG_INFO, "------------------------------------------------------------\n\n");
-    }
-
-    /* Initialize the Xilinx Media Accelerator */
-    if (xma_initialize(xclbin_nparam, xlnx_num_devs) != 0)
-    {
-       av_log(NULL, AV_LOG_ERROR, "ERROR: XMA Initialization failed. Program exiting\n");
-       exit_program(1);
-    }
-}
-
-
 #endif
-
 
 void init_opts(void)
 {
@@ -935,27 +914,7 @@ do {                                                                           \
     }
 
 #if CONFIG_LIBXMA2API
-    if (xlnx_num_devs == 0)
-    {
-       if ((!getenv("XRM_DEVICE_ID")) && (!getenv("XRM_RESERVE_ID")))//TODO:check if this additional condition is needed
-       {
-         setenv("XRM_DEVICE_ID", "0" , 0); //set defualt device to 0
-         xclbin_nparam[xlnx_num_devs].device_id = dev_id;
-         xclbin_nparam[xlnx_num_devs].xclbin_name = XLNX_XCLBIN_PATH;
-         xlnx_num_devs++;
-         av_log(NULL, AV_LOG_WARNING, "No device set hence falling to default device 0\n");
-       }
-    }     		
-    else if (xlnx_num_devs > MAX_XLNX_DEVICES_PER_CMD)
-    {
-        av_log(NULL, AV_LOG_ERROR, "ERROR: ffmpeg command is requesting for  %d devices which is more than supported %d devices.\n", xlnx_num_devs, MAX_XLNX_DEVICES_PER_CMD);
-        return AVERROR(EINVAL); 
-     }
-
-    if (!getenv("XRM_RESERVE_ID"))
-    {
-       xlnx_hwdev_init(xlnx_num_devs, xclbin_nparam );    
-    }
+    avdevice_xlnx_hwdev_init(xclbin_nparam, xlnx_num_devs, dev_id);
 #endif
 
     if (octx->cur_group.nb_opts || codec_opts || format_opts || resample_opts)
