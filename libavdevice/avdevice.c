@@ -23,6 +23,7 @@
 #include "avdevice.h"
 #include "internal.h"
 #include "config.h"
+#include "xma.h"
 
 #include "libavutil/ffversion.h"
 const char av_device_ffversion[] = "FFmpeg version " FFMPEG_VERSION;
@@ -185,8 +186,9 @@ static void xlnx_init(int xlnx_num_devs, XmaXclbinParameter *xclbin_nparam )
     }
 }
 
-int avdevice_xlnx_hwdev_init(XmaXclbinParameter* xclbin_nparam, int xlnx_num_devs, int dev_id)
+int avdevice_xlnx_hwdev_init(void* xclbin_param, int xlnx_num_devs, int dev_id)
 {
+    XmaXclbinParameter* xclbin_nparam = (XmaXclbinParameter*)xclbin_param;
     av_log(NULL, AV_LOG_ERROR, "---------> 1\n");
     if (xlnx_num_devs == 0)
     {

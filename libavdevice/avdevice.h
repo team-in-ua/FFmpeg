@@ -49,7 +49,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/dict.h"
 #include "libavformat/avformat.h"
-#include "xma.h"
+
 #if CONFIG_LIBXMA2API
 #define MAX_XLNX_DEVS 128
 #define XLNX_XCLBIN_PATH "/opt/xilinx/xcdr/xclbins/transcode.xclbin"
@@ -519,7 +519,7 @@ int avdevice_list_output_sinks(struct AVOutputFormat *device, const char *device
                                AVDictionary *device_options, AVDeviceInfoList **device_list);
 
 #if CONFIG_LIBXMA2API
-int avdevice_xlnx_hwdev_init(XmaXclbinParameter* xclbin_nparam, int xlnx_num_devs, int dev_id);
+int avdevice_xlnx_hwdev_init(void* xclbin_param, int xlnx_num_devs, int dev_id);
 #endif
 /**
  * @}

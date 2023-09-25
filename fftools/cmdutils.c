@@ -914,7 +914,7 @@ do {                                                                           \
     }
 
 #if CONFIG_LIBXMA2API
-    avdevice_xlnx_hwdev_init(xclbin_nparam, xlnx_num_devs, dev_id);
+    avdevice_xlnx_hwdev_init((void*)xclbin_nparam, xlnx_num_devs, dev_id);
 #endif
 
     if (octx->cur_group.nb_opts || codec_opts || format_opts || resample_opts)
