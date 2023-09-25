@@ -518,9 +518,8 @@ int avdevice_list_input_sources(struct AVInputFormat *device, const char *device
 int avdevice_list_output_sinks(struct AVOutputFormat *device, const char *device_name,
                                AVDictionary *device_options, AVDeviceInfoList **device_list);
 
-#if CONFIG_LIBXMA2API
 int avdevice_xlnx_hwdev_init(void* xclbin_param, int xlnx_num_devs, int dev_id);
-#endif
+
 /**
  * @}
  */

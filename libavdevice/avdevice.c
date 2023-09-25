@@ -185,9 +185,11 @@ static void xlnx_init(int xlnx_num_devs, XmaXclbinParameter *xclbin_nparam )
         av_log(NULL, AV_LOG_ERROR, "ERROR: XMA Initialization failed. Program exiting\n");
     }
 }
+#endif
 
 int avdevice_xlnx_hwdev_init(void* xclbin_param, int xlnx_num_devs, int dev_id)
 {
+#if CONFIG_LIBXMA2API
     XmaXclbinParameter* xclbin_nparam = (XmaXclbinParameter*)xclbin_param;
     av_log(NULL, AV_LOG_ERROR, "---------> 1\n");
     if (xlnx_num_devs == 0)
@@ -215,5 +217,8 @@ int avdevice_xlnx_hwdev_init(void* xclbin_param, int xlnx_num_devs, int dev_id)
     }
 
     return 0;
-}
+#elif
+av_log(NULL, AV_LOG_ERROR, "CONFIG_LIBXMA2API is undefined\n");
 #endif
+}
+
